@@ -12,10 +12,42 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <math.h>
 
 #include <arm_neon.h>
 
 #include "unit.h"  // Note: Include common definitions for all units
+
+#include "operator/operator.h"
+
+enum : uint8_t
+{
+  kSynthParamIndexNote = 0,
+  kSynthParamIndexCoarse_1,
+  kSynthParamIndexFine_1,
+  kSynthParamIndexLevel_1,
+  kSynthParamIndexEgR1_1,
+  kSynthParamIndexEgR2_1,
+  kSynthParamIndexEgR3_1,
+  kSynthParamIndexEgR4_1,
+  kSynthParamIndexEgL1_1,
+  kSynthParamIndexEgL2_1,
+  kSynthParamIndexEgL3_1,
+  kSynthParamIndexEgL4_1,
+  kSynthParamIndexCoarse_2,
+  kSynthParamIndexFine_2,
+  kSynthParamIndexDetune_2,
+  kSynthParamIndexLevel_2,
+  kSynthParamIndexEgR1_2,
+  kSynthParamIndexEgR2_2,
+  kSynthParamIndexEgR3_2,
+  kSynthParamIndexEgR4_2,
+  kSynthParamIndexEgL1_2,
+  kSynthParamIndexEgL2_2,
+  kSynthParamIndexEgL3_2,
+  kSynthParamIndexEgL4_2,
+  KNumSynthParams
+};
 
 class Synth {
  public:
@@ -41,6 +73,14 @@ class Synth {
 
     // Note: if need to allocate some memory can do it here and return k_unit_err_memory if getting allocation errors
 
+    op1.Init(desc->samplerate);
+    op2.Init(desc->samplerate);
+
+    for (uint8_t i = 0; i < KNumSynthParams; i++)
+    {
+      params[i] = 0;
+    }
+    
     return k_unit_err_none;
   }
 
@@ -51,6 +91,8 @@ class Synth {
   inline void Reset() {
     // Note: Reset synth state. I.e.: Clear filter memory, reset oscillator
     // phase etc.
+    op1.Reset();
+    op2.Reset();
   }
 
   inline void Resume() {
@@ -73,24 +115,109 @@ class Synth {
 
     for (; out_p != out_e; out_p += 2) {
       // Note: should take advantage of NEON ArmV7 instructions
-      vst1_f32(out_p, vdup_n_f32(0.f));
+      // vst1_f32(out_p, vdup_n_f32(0.f));
+      float sig = op1.ProcessSample(op2.ProcessSample(0.0f));
+      vst1_f32(out_p, vdup_n_f32(sig));
     }
   }
 
   inline void setParameter(uint8_t index, int32_t value) {
-    (void)value;
+    params[index] = value;
     switch (index) {
+      case kSynthParamIndexNote:
+        op1.SetFreq((440.f / 32) * powf(2, (value - 9.0f) / 12.0f));
+        op2.SetFreq((440.f / 32) * powf(2, (value - 9.0f) / 12.0f));
+        break;
+      case kSynthParamIndexCoarse_1:
+        if (value == 0)
+        {
+          op1.SetParameter(kOpParamIndexCoarse, 0.5f);
+        }
+        else
+        {
+          op1.SetParameter(kOpParamIndexCoarse, (float)value);
+        }
+        break;
+      case kSynthParamIndexFine_1:
+        op1.SetParameter(kOpParamIndexFine, (float)value * 0.01f);
+        break;
+      case kSynthParamIndexLevel_1:
+        op1.SetParameter(kOpParamIndexLevel, (float)value * 0.01f);
+        break;
+      case kSynthParamIndexEgR1_1:
+        op1.SetParameter(kOpParamIndexEgR1, (float)value * 0.01f);
+        break;
+      case kSynthParamIndexEgR2_1:
+        op1.SetParameter(kOpParamIndexEgR2, (float)value * 0.01f);
+        break;
+      case kSynthParamIndexEgR3_1:
+        op1.SetParameter(kOpParamIndexEgR3, (float)value * 0.01f);
+        break;
+      case kSynthParamIndexEgR4_1:
+        op1.SetParameter(kOpParamIndexEgR4, (float)value * 0.01f);
+        break;
+      case kSynthParamIndexEgL1_1:
+        op1.SetParameter(kOpParamIndexEgL1, (float)value * 0.01f);
+        break;
+      case kSynthParamIndexEgL2_1:
+        op1.SetParameter(kOpParamIndexEgL2, (float)value * 0.01f);
+        break;
+      case kSynthParamIndexEgL3_1:
+        op1.SetParameter(kOpParamIndexEgL3, (float)value * 0.01f);
+        break;
+      case kSynthParamIndexEgL4_1:
+        op1.SetParameter(kOpParamIndexEgL4, (float)value * 0.01f);
+        break;
+      case kSynthParamIndexCoarse_2:
+        if (value == 0)
+        {
+          op2.SetParameter(kOpParamIndexCoarse, 0.5f);
+        }
+        else
+        {
+          op2.SetParameter(kOpParamIndexCoarse, (float)value);
+        }
+        break;
+      case kSynthParamIndexFine_2:
+        op2.SetParameter(kOpParamIndexFine, (float)value * 0.01f);
+        break;
+      case kSynthParamIndexDetune_2:
+        op2.SetParameter(kOpParamIndexFine, (float)value);
+        break;
+      case kSynthParamIndexLevel_2:
+        op2.SetParameter(kOpParamIndexLevel, (float)value * 0.01f);
+        break;
+      case kSynthParamIndexEgR1_2:
+        op2.SetParameter(kOpParamIndexEgR1, (float)value * 0.01f);
+        break;
+      case kSynthParamIndexEgR2_2:
+        op2.SetParameter(kOpParamIndexEgR2, (float)value * 0.01f);
+        break;
+      case kSynthParamIndexEgR3_2:
+        op2.SetParameter(kOpParamIndexEgR3, (float)value * 0.01f);
+        break;
+      case kSynthParamIndexEgR4_2:
+        op2.SetParameter(kOpParamIndexEgR4, (float)value * 0.01f);
+        break;
+      case kSynthParamIndexEgL1_2:
+        op2.SetParameter(kOpParamIndexEgL1, (float)value * 0.01f);
+        break;
+      case kSynthParamIndexEgL2_2:
+        op2.SetParameter(kOpParamIndexEgL2, (float)value * 0.01f);
+        break;
+      case kSynthParamIndexEgL3_2:
+        op2.SetParameter(kOpParamIndexEgL3, (float)value * 0.01f);
+        break;
+      case kSynthParamIndexEgL4_2:
+        op2.SetParameter(kOpParamIndexEgL4, (float)value * 0.01f);
+        break;
       default:
         break;
     }
   }
 
   inline int32_t getParameterValue(uint8_t index) const {
-    switch (index) {
-      default:
-        break;
-    }
-    return 0;
+    return params[index];
   }
 
   inline const char * getParameterStrValue(uint8_t index, int32_t value) const {
@@ -120,19 +247,29 @@ class Synth {
   }
 
   inline void NoteOn(uint8_t note, uint8_t velocity) {
-    (void)note;
-    (void)velocity;
+    op1.NoteOn(note, velocity);
+    op2.NoteOn(note, velocity);
   }
 
-  inline void NoteOff(uint8_t note) { (void)note; }
+  inline void NoteOff(uint8_t note) {
+    op1.NoteOff(note);
+    op2.NoteOff(note);
+  }
 
   inline void GateOn(uint8_t velocity) {
-    (void)velocity;
+    op1.GateOn(velocity);
+    op2.GateOn(velocity);
   }
 
-  inline void GateOff() {}
+  inline void GateOff() {
+    op1.GateOff();
+    op2.GateOff();
+  }
 
-  inline void AllNoteOff() {}
+  inline void AllNoteOff() {
+    op1.GateOff();
+    op2.GateOff();
+  }
 
   inline void PitchBend(uint16_t bend) { (void)bend; }
 
@@ -165,6 +302,10 @@ class Synth {
   /*===========================================================================*/
 
   std::atomic_uint_fast32_t flags_;
+  Operator op1;
+  Operator op2;
+
+  int32_t params[KNumSynthParams];
 
   /*===========================================================================*/
   /* Private Methods. */
