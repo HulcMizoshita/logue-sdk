@@ -86,7 +86,7 @@ float EnvelopeGenerator::ProcessSample()
   case kEgState1: // Attack
   {
     float dist = mEnd - mStart;
-    float rate = dist / (mParams[kEgParamIndexR1] * mSampleRate);
+    float rate = dist / (powf(1.0f - mParams[kEgParamIndexR1], 4.0f) * mSampleRate);
     mEnvelopeVal += rate;
     if (abs(dist) < abs(mEnvelopeVal - mStart))
     {
@@ -98,7 +98,7 @@ float EnvelopeGenerator::ProcessSample()
   case kEgState2: // Decay1
   {
     float dist = mEnd - mStart;
-    float rate = dist / (mParams[kEgParamIndexR2] * mSampleRate);
+    float rate = dist / (powf(1.0f - mParams[kEgParamIndexR2], 4.0f) * mSampleRate);
     mEnvelopeVal += rate;
     if (abs(dist) < abs(mEnvelopeVal - mStart))
     {
@@ -110,7 +110,7 @@ float EnvelopeGenerator::ProcessSample()
   case kEgState3: // Decay2
   {
     float dist = mEnd - mStart;
-    float rate = dist / (mParams[kEgParamIndexR3] * mSampleRate);
+    float rate = dist / (powf(1.0f - mParams[kEgParamIndexR3], 4.0f) * mSampleRate);
     mEnvelopeVal += rate;
     if (abs(dist) < abs(mEnvelopeVal - mStart))
     {
@@ -125,7 +125,7 @@ float EnvelopeGenerator::ProcessSample()
   case kEgState5: // Release
   {
     float dist = mEnd - mStart;
-    float rate = dist / (mParams[kEgParamIndexR4] * mSampleRate);
+    float rate = dist / (powf(1.0f - mParams[kEgParamIndexR4], 4.0f) * mSampleRate);
     mEnvelopeVal += rate;
     if (abs(dist) < abs(mEnvelopeVal - mStart))
     {
@@ -145,21 +145,21 @@ float EnvelopeGenerator::ProcessSample()
 
 void EnvelopeGenerator::GateOn()
 {
-  if (mParams[kEgParamIndexR1] > 0.0f)
+  if (mParams[kEgParamIndexR1] < 1.0f)
   {
     mEnvelopeVal = 0.0f;
     mStart = 0.0f;
     mEnd = mParams[kEgParamIndexL1];
     mState = kEgState1;
   }
-  else if(mParams[kEgParamIndexR2] > 0.0f)
+  else if(mParams[kEgParamIndexR2] < 1.0f)
   {
     mEnvelopeVal = mParams[kEgParamIndexL1];
     mStart = mParams[kEgParamIndexL1];
     mEnd = mParams[kEgParamIndexL2];
     mState = kEgState2;
   }
-  else if(mParams[kEgParamIndexR3] > 0.0f)
+  else if(mParams[kEgParamIndexR3] < 1.0f)
   {
     mEnvelopeVal = mParams[kEgParamIndexL2];
     mStart = mParams[kEgParamIndexL2];
@@ -176,7 +176,7 @@ void EnvelopeGenerator::GateOff()
 {
   if (mState != kEgStateIdle)
   {
-    if (mParams[kEgParamIndexR4] > 0.0f)
+    if (mParams[kEgParamIndexR4] < 1.0f)
     {
       mStart = mEnvelopeVal;
       mEnd = mParams[kEgParamIndexL4];
@@ -195,13 +195,13 @@ void EnvelopeGenerator::NextState()
   switch (mState)
   {
   case kEgState1:
-    if(mParams[kEgParamIndexR2] > 0.0f)
+    if(mParams[kEgParamIndexR2] < 1.0f)
     {
       mStart = mParams[kEgParamIndexL1];
       mEnd = mParams[kEgParamIndexL2];
       mState = kEgState2;
     }
-    else if(mParams[kEgParamIndexR3] > 0.0f)
+    else if(mParams[kEgParamIndexR3] < 1.0f)
     {
       mStart = mParams[kEgParamIndexL2];
       mEnd = mParams[kEgParamIndexL3];
@@ -213,7 +213,7 @@ void EnvelopeGenerator::NextState()
     }
     break;
   case kEgState2:
-    if(mParams[kEgParamIndexR3] > 0.0f)
+    if(mParams[kEgParamIndexR3] < 1.0f)
     {
       mStart = mParams[kEgParamIndexL2];
       mEnd = mParams[kEgParamIndexL3];

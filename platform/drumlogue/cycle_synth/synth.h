@@ -13,41 +13,45 @@
 #include <cstddef>
 #include <cstdint>
 #include <math.h>
+#include <string.h>
 
 #include <arm_neon.h>
 
 #include "unit.h"  // Note: Include common definitions for all units
 
-#include "operator/operator.h"
+#include "voice/voice.h"
 
 enum : uint8_t
 {
   kSynthParamIndexNote = 0,
-  kSynthParamIndexCoarse_1,
-  kSynthParamIndexFine_1,
-  kSynthParamIndexLevel_1,
-  kSynthParamIndexEgR1_1,
-  kSynthParamIndexEgR2_1,
-  kSynthParamIndexEgR3_1,
-  kSynthParamIndexEgR4_1,
-  kSynthParamIndexEgL1_1,
-  kSynthParamIndexEgL2_1,
-  kSynthParamIndexEgL3_1,
-  kSynthParamIndexEgL4_1,
-  kSynthParamIndexCoarse_2,
-  kSynthParamIndexFine_2,
-  kSynthParamIndexDetune_2,
-  kSynthParamIndexLevel_2,
-  kSynthParamIndexEgR1_2,
-  kSynthParamIndexEgR2_2,
-  kSynthParamIndexEgR3_2,
-  kSynthParamIndexEgR4_2,
-  kSynthParamIndexEgL1_2,
-  kSynthParamIndexEgL2_2,
-  kSynthParamIndexEgL3_2,
-  kSynthParamIndexEgL4_2,
+  kSynthParamIndexVoice,
   KNumSynthParams
 };
+
+// This only handles 32-voice packed DX7 .syx files
+const int SYX_FILE_SIZE  = 4096 + 8;
+const int SYX_NUM_VOICES = 32;
+const int SYX_VOICE_SIZE = 4096/SYX_NUM_VOICES;
+const int SYX_NUM_OSC    = 6;
+
+static bool FindSyx(uint8_t* from, uint8_t* to,
+                    uint8_t*& begin, uint8_t*& end)
+{
+  begin = to;
+  end = to;
+  for (; from != to; ++from) {
+    if (*from == 0xf0) {
+      begin = from;
+      for (; from != to; ++from) {
+        if (*from == 0xf7) {
+          end = ++from;
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
 
 class Synth {
  public:
@@ -59,7 +63,11 @@ class Synth {
   /* Lifecycle Methods. */
   /*===========================================================================*/
 
-  Synth(void) {}
+  Synth(void)
+  {
+
+  }
+
   ~Synth(void) {}
 
   inline int8_t Init(const unit_runtime_desc_t * desc) {
@@ -73,15 +81,37 @@ class Synth {
 
     // Note: if need to allocate some memory can do it here and return k_unit_err_memory if getting allocation errors
 
-    op1.Init(desc->samplerate);
-    op2.Init(desc->samplerate);
+    mVoice.Init(desc->samplerate);
 
     for (uint8_t i = 0; i < KNumSynthParams; i++)
     {
       params[i] = 0;
     }
-    
-    return k_unit_err_none;
+
+    uint8_t syxData[SYX_FILE_SIZE * 2] = {
+      #include "2.txt"
+    };
+
+    uint8_t* dataBegin = &syxData[0];
+    uint8_t* dataEnd = &syxData[SYX_FILE_SIZE * 2 - 1];
+    uint8_t* syxBegin = dataBegin;
+    uint8_t* syxEnd = dataBegin;
+
+    if (FindSyx(dataBegin, dataEnd, syxBegin, syxEnd))
+    {
+      dataBegin = syxEnd;
+      if (syxEnd - syxBegin == SYX_FILE_SIZE)
+      {
+        memcpy(mSyxData, &*syxBegin, SYX_FILE_SIZE);
+        SetVoiceParams();
+      }
+
+      return k_unit_err_none;
+    }
+    else
+    {
+      return k_unit_err_none;
+    }
   }
 
   inline void Teardown() {
@@ -91,8 +121,7 @@ class Synth {
   inline void Reset() {
     // Note: Reset synth state. I.e.: Clear filter memory, reset oscillator
     // phase etc.
-    op1.Reset();
-    op2.Reset();
+    mVoice.Reset();
   }
 
   inline void Resume() {
@@ -116,7 +145,7 @@ class Synth {
     for (; out_p != out_e; out_p += 2) {
       // Note: should take advantage of NEON ArmV7 instructions
       // vst1_f32(out_p, vdup_n_f32(0.f));
-      float sig = op1.ProcessSample(op2.ProcessSample(0.0f));
+      float sig = mVoice.ProcessSample();
       vst1_f32(out_p, vdup_n_f32(sig));
     }
   }
@@ -125,91 +154,10 @@ class Synth {
     params[index] = value;
     switch (index) {
       case kSynthParamIndexNote:
-        op1.SetFreq((440.f / 32) * powf(2, (value - 9.0f) / 12.0f));
-        op2.SetFreq((440.f / 32) * powf(2, (value - 9.0f) / 12.0f));
+        mNote = value;
         break;
-      case kSynthParamIndexCoarse_1:
-        if (value == 0)
-        {
-          op1.SetParameter(kOpParamIndexCoarse, 0.5f);
-        }
-        else
-        {
-          op1.SetParameter(kOpParamIndexCoarse, (float)value);
-        }
-        break;
-      case kSynthParamIndexFine_1:
-        op1.SetParameter(kOpParamIndexFine, (float)value * 0.01f);
-        break;
-      case kSynthParamIndexLevel_1:
-        op1.SetParameter(kOpParamIndexLevel, (float)value * 0.01f);
-        break;
-      case kSynthParamIndexEgR1_1:
-        op1.SetParameter(kOpParamIndexEgR1, (float)value * 0.01f);
-        break;
-      case kSynthParamIndexEgR2_1:
-        op1.SetParameter(kOpParamIndexEgR2, (float)value * 0.01f);
-        break;
-      case kSynthParamIndexEgR3_1:
-        op1.SetParameter(kOpParamIndexEgR3, (float)value * 0.01f);
-        break;
-      case kSynthParamIndexEgR4_1:
-        op1.SetParameter(kOpParamIndexEgR4, (float)value * 0.01f);
-        break;
-      case kSynthParamIndexEgL1_1:
-        op1.SetParameter(kOpParamIndexEgL1, (float)value * 0.01f);
-        break;
-      case kSynthParamIndexEgL2_1:
-        op1.SetParameter(kOpParamIndexEgL2, (float)value * 0.01f);
-        break;
-      case kSynthParamIndexEgL3_1:
-        op1.SetParameter(kOpParamIndexEgL3, (float)value * 0.01f);
-        break;
-      case kSynthParamIndexEgL4_1:
-        op1.SetParameter(kOpParamIndexEgL4, (float)value * 0.01f);
-        break;
-      case kSynthParamIndexCoarse_2:
-        if (value == 0)
-        {
-          op2.SetParameter(kOpParamIndexCoarse, 0.5f);
-        }
-        else
-        {
-          op2.SetParameter(kOpParamIndexCoarse, (float)value);
-        }
-        break;
-      case kSynthParamIndexFine_2:
-        op2.SetParameter(kOpParamIndexFine, (float)value * 0.01f);
-        break;
-      case kSynthParamIndexDetune_2:
-        op2.SetParameter(kOpParamIndexFine, (float)value);
-        break;
-      case kSynthParamIndexLevel_2:
-        op2.SetParameter(kOpParamIndexLevel, (float)value * 0.01f);
-        break;
-      case kSynthParamIndexEgR1_2:
-        op2.SetParameter(kOpParamIndexEgR1, (float)value * 0.01f);
-        break;
-      case kSynthParamIndexEgR2_2:
-        op2.SetParameter(kOpParamIndexEgR2, (float)value * 0.01f);
-        break;
-      case kSynthParamIndexEgR3_2:
-        op2.SetParameter(kOpParamIndexEgR3, (float)value * 0.01f);
-        break;
-      case kSynthParamIndexEgR4_2:
-        op2.SetParameter(kOpParamIndexEgR4, (float)value * 0.01f);
-        break;
-      case kSynthParamIndexEgL1_2:
-        op2.SetParameter(kOpParamIndexEgL1, (float)value * 0.01f);
-        break;
-      case kSynthParamIndexEgL2_2:
-        op2.SetParameter(kOpParamIndexEgL2, (float)value * 0.01f);
-        break;
-      case kSynthParamIndexEgL3_2:
-        op2.SetParameter(kOpParamIndexEgL3, (float)value * 0.01f);
-        break;
-      case kSynthParamIndexEgL4_2:
-        op2.SetParameter(kOpParamIndexEgL4, (float)value * 0.01f);
+      case kSynthParamIndexVoice:
+        SetVoiceParams(value);
         break;
       default:
         break;
@@ -247,28 +195,25 @@ class Synth {
   }
 
   inline void NoteOn(uint8_t note, uint8_t velocity) {
-    op1.NoteOn(note, velocity);
-    op2.NoteOn(note, velocity);
+    mNote = note;
+    mVoice.NoteOn(mNote, velocity);
   }
 
   inline void NoteOff(uint8_t note) {
-    op1.NoteOff(note);
-    op2.NoteOff(note);
+    mNote = note;
+    mVoice.NoteOff(mNote);
   }
 
   inline void GateOn(uint8_t velocity) {
-    op1.GateOn(velocity);
-    op2.GateOn(velocity);
+    mVoice.NoteOn(mNote, velocity);
   }
 
   inline void GateOff() {
-    op1.GateOff();
-    op2.GateOff();
+    mVoice.NoteOff(mNote);
   }
 
   inline void AllNoteOff() {
-    op1.GateOff();
-    op2.GateOff();
+    mVoice.NoteOff(mNote);
   }
 
   inline void PitchBend(uint16_t bend) { (void)bend; }
@@ -302,14 +247,94 @@ class Synth {
   /*===========================================================================*/
 
   std::atomic_uint_fast32_t flags_;
-  Operator op1;
-  Operator op2;
+  Voice mVoice;
 
+  uint8_t mNote = 0;
   int32_t params[KNumSynthParams];
+
+  uint8_t mSyxData[SYX_FILE_SIZE];
 
   /*===========================================================================*/
   /* Private Methods. */
   /*===========================================================================*/
+
+  void SetVoiceParams(uint8_t voiceIndex = 0)
+  {
+    //　↓ startIndex
+    uint16_t dataIndex = kNumSyxIndexHeader + ((kNumSyxOpParamsRaw * kNumOperaters) + kNumSyxVoiceParamsRaw) * voiceIndex;
+
+    for (uint16_t i = 0; i < kNumSyxIndexOpParams * kNumOperaters; i++)
+    {
+      uint16_t paramIndex = i % kNumSyxIndexOpParams;
+      switch (paramIndex)
+      {
+      case kSyxIndexOpKbdLvlSclLftCurve:
+        mVoice.SetParameter(i, (0x3 & mSyxData[dataIndex]));
+        break;
+      case kSyxIndexOpKbdLvlSclRhtCurve:
+        mVoice.SetParameter(i, (0x3 & (mSyxData[dataIndex] >> 2)));
+        dataIndex++;
+        break;
+      case kSyxIndexOpOscDetune:
+        mVoice.SetParameter(i, (0x0f & (mSyxData[dataIndex] >> 3)));
+        break;
+      case kSyxIndexOpKbdRateScaling:
+        mVoice.SetParameter(i, (0x07 & mSyxData[dataIndex]));
+        dataIndex++;
+        break;
+      case kSyxIndexOpKeyVelSens:
+        mVoice.SetParameter(i, (0x07 & (mSyxData[dataIndex] >> 2)));
+        break;
+      case kSyxIndexOpAmpModSens:
+        mVoice.SetParameter(i, (0x03 & mSyxData[dataIndex]));
+        dataIndex++;
+        break;
+      case kSyxIndexOpOscCoarse:
+        mVoice.SetParameter(i, (0x1f & (mSyxData[dataIndex] >> 1)));
+        break;
+      case kSyxIndexOpOscMode:
+        mVoice.SetParameter(i, (0x01 & mSyxData[dataIndex]));
+        dataIndex++;
+        break;
+      default:
+        mVoice.SetParameter(i, mSyxData[dataIndex]);
+        dataIndex++;
+        break;
+      }
+    }
+    for (uint16_t paramIndex = 0; paramIndex < kNumSyxIndexVoiceParams; paramIndex++)
+    {
+      uint16_t i = paramIndex + kNumSyxIndexOpParams * kNumOperaters;
+      switch (paramIndex)
+      {
+      case kSyxIndexVoiceFeedback:
+        mVoice.SetParameter(i, (0x07 & mSyxData[dataIndex]));
+        break;
+      case kSyxIndexVoiceOscSync:
+        mVoice.SetParameter(i, (0x01 & (mSyxData[dataIndex] >> 3)));
+        dataIndex++;
+        break;
+      case kSyxIndexVoicePitchModSens:
+        mVoice.SetParameter(i, (0x07 & (mSyxData[dataIndex] >> 4)));
+        break;
+      case kSyxIndexVoiceLfoWaveform:
+        mVoice.SetParameter(i, (0x07 & (mSyxData[dataIndex] >> 1)));
+        break;
+      case kSyxIndexVoiceLfoSync:
+        mVoice.SetParameter(i, (0x01 & mSyxData[dataIndex]));
+        dataIndex++;
+        break;
+      case kSyxIndexVoiceName:
+        for(int i = 0; i < 10; ++i) {
+          dataIndex++;
+        }
+      default:
+        mVoice.SetParameter(i, mSyxData[dataIndex]);
+        dataIndex++;
+        break;
+      }
+    }
+  }
 
   /*===========================================================================*/
   /* Constants. */
